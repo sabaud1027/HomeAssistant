@@ -1,0 +1,33 @@
+alias: Frigate - Known Car Detected - Day Time
+description: ''
+triggers:
+  - trigger: state
+    entity_id: sensor.garage_door_camera_last_recognized_plate
+    to: Matt's Car
+    id: matts_car
+  - trigger: state
+    entity_id: sensor.garage_door_camera_last_recognized_plate
+    to: Emma's Car
+    id: emmas_car
+conditions:
+  - condition: time
+    after: '07:00:00'
+    before: '19:30:00'
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: emmas_car
+        sequence:
+          - action: telegram_bot.send_message
+            metadata: {}
+            data:
+              entity_id:
+                - notify.matt
+              title: Frigate Notification
+              message: Emma is home!
+      - conditions:
+          - condition: trigger
+            id: matts_car
+        sequence: []
+mode: single
