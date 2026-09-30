@@ -15,15 +15,20 @@ triggers:
   - trigger: mqtt
     topic: frigate/events
 conditions:
+  # entered_zones only ever grows, so this fires once per tracked car: on the
+  # update where it first reaches drive_parked, having been in drive_entrance
+  # on an earlier update. Using current_zones instead would re-fire when a
+  # partially out-of-frame parked car flickers in and out of drive_parked, and
+  # would fire for a parked car that Frigate re-detects in both zones at once.
   - condition: template
     value_template: >-
       {% set a = trigger.payload_json.after %}
       {% set b = trigger.payload_json.before %}
       {{ a.camera == 'garage_door_camera'
          and a.label == 'car'
-         and 'drive_parked' in a.current_zones
-         and 'drive_parked' not in (b.current_zones or [])
-         and (a.entered_zones or []) | first == 'drive_entrance' }}
+         and 'drive_entrance' in (b.entered_zones or [])
+         and 'drive_parked' not in (b.entered_zones or [])
+         and 'drive_parked' in (a.entered_zones or []) }}
   - condition: template
     value_template: >-
       {{ car in ["Matt's Car", "Emma's Car"] }}
