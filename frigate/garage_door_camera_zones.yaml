@@ -1,0 +1,21 @@
+# Merge into the garage_door_camera section of your Frigate config.
+# Draw the coordinates in the Frigate UI (Settings > Masks / Zones) - the
+# values below are placeholders.
+cameras:
+  garage_door_camera:
+    zones:
+      drive_entrance:
+        # Where the car enters and the plate is readable.
+        coordinates: 0.0,1.0,0.5,1.0,0.5,0.7,0.0,0.7
+        objects:
+          - car
+        inertia: 3
+      drive_parked:
+        # Section of drive just BEFORE the parking spot, where the whole
+        # car is still in frame. Keep it away from the frame edge: zone
+        # membership uses the bottom-centre of the detection box, which
+        # jumps around when the car is cropped.
+        coordinates: 0.5,0.7,1.0,0.7,1.0,0.4,0.5,0.4
+        objects:
+          - car
+        inertia: 3

@@ -1,0 +1,59 @@
+# Alerts only when a known car ARRIVES (drives in from the entrance towards
+# the garage). Departures are ignored because the car passes through the
+# zones in the opposite order.
+#
+# Relies on two Frigate zones on the garage_door_camera (see
+# frigate/garage_door_camera_zones.yaml):
+#   drive_entrance - where the plate is readable as the car pulls in
+#   drive_parked   - further up the drive, car fully visible, plate hidden
+alias: Frigate - Known Car Arrived - Day Time
+description: >-
+  Notify when a known car enters drive_parked after first entering
+  drive_entrance. Frigate keeps the plate on the tracked object, so the
+  plate does not need to be visible in drive_parked.
+triggers:
+  - trigger: mqtt
+    topic: frigate/events
+conditions:
+  - condition: template
+    value_template: >-
+      {% set a = trigger.payload_json.after %}
+      {% set b = trigger.payload_json.before %}
+      {{ a.camera == 'garage_door_camera'
+         and a.label == 'car'
+         and 'drive_parked' in a.current_zones
+         and 'drive_parked' not in (b.current_zones or [])
+         and (a.entered_zones or []) | first == 'drive_entrance' }}
+  - condition: template
+    value_template: >-
+      {{ car in ["Matt's Car", "Emma's Car"] }}
+  - condition: time
+    after: "07:00:00"
+    before: "19:30:00"
+variables:
+  # sub_label is ["Emma's Car", score] on Frigate 0.14+, a plain string on
+  # older versions.
+  car: >-
+    {% set s = trigger.payload_json.after.sub_label %}
+    {{ (s[0] if s is not string and s is iterable else s) or '' }}
+actions:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ car == "Emma's Car" }}
+        sequence:
+          - action: telegram_bot.send_message
+            metadata: {}
+            data:
+              entity_id:
+                - notify.matt
+              title: Frigate Notification
+              message: Emma is home!
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ car == "Matt's Car" }}
+        sequence: []
+mode: single
+max_exceeded: silent
