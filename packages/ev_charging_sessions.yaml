@@ -1,0 +1,138 @@
+# EV charging session log for the Ford Kuga.
+#
+# Feeds the Cars dashboard (dashboards/cars.yaml):
+#   sensor.ev_charger_sessions                state = number of sessions,
+#                                             attributes.sessions = newest first
+#   sensor.ev_charger_current_session_energy  kWh added this session (live),
+#                                             or by the last one when idle
+#
+# Energy is measured here rather than read from the charger's own
+# session-energy sensor at the end of a session. That sensor resets when
+# charging stops or the plug state changes, so by the time the session is
+# closed it already reads 0, which is why the history showed 0.00 kWh.
+# Instead the charger power is integrated into a running total that never
+# resets, and each session stores the difference between its start and end.
+#
+# Needs packages enabled in configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+
+sensor:
+  # Running kWh total of everything the charger has delivered.
+  - platform: integration
+    name: EV Charger Energy Total
+    unique_id: ev_charger_energy_total
+    source: sensor.ev_charger_power
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+    # Keep integrating while power sits flat (otherwise a steady 7 kW
+    # charge only adds energy when the reading changes).
+    max_sub_interval:
+      minutes: 1
+
+template:
+  - triggers:
+      # Power above 100 W starts a session straight away so the first
+      # minutes are counted. Blips are discarded when the session closes.
+      - trigger: numeric_state
+        entity_id: sensor.ev_charger_power
+        above: 100
+        id: start
+      # Below 100 W for 5 minutes ends it. The hold rides out the short
+      # pauses the car takes while charging.
+      - trigger: numeric_state
+        entity_id: sensor.ev_charger_power
+        below: 100
+        for: "00:05:00"
+        id: end_idle
+      - trigger: state
+        entity_id: switch.ev_charger
+        to: "off"
+        id: end_off
+    actions:
+      - variables:
+          max_sessions: 30
+          prev_sessions: >
+            {{ state_attr('sensor.ev_charger_sessions', 'sessions') or [] }}
+          active: >
+            {{ state_attr('sensor.ev_charger_sessions', 'active') }}
+          energy_total: >
+            {{ states('sensor.ev_charger_energy_total') | float(none) }}
+          range_now: >
+            {{ states('sensor.fcq_wf0fxxwpmhmj46157_elveh') | float(none) }}
+          new_active: >
+            {% if trigger.id == 'start' %}
+              {% if active %}
+                {{ active }}
+              {% else %}
+                {{ {
+                  'start_ts': as_timestamp(now()),
+                  'energy_start_kwh': energy_total,
+                  'range_start_miles': range_now
+                } }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
+          new_sessions: >
+            {% if trigger.id != 'start' and active %}
+              {% set end_ts = as_timestamp(now())
+                   - (300 if trigger.id == 'end_idle' else 0) %}
+              {% set duration = [end_ts - active.start_ts, 0] | max %}
+              {% if energy_total is number
+                    and active.energy_start_kwh is number %}
+                {% set energy = [energy_total - active.energy_start_kwh, 0] | max %}
+              {% else %}
+                {% set energy = states('sensor.ev_charger_session_energy')
+                     | float(0) %}
+              {% endif %}
+              {% set r0 = active.range_start_miles %}
+              {% set r1 = range_now %}
+              {% if duration >= 180 and energy >= 0.05 %}
+                {% set entry = {
+                  'start': active.start_ts | timestamp_custom('%Y-%m-%d %H:%M:%S'),
+                  'end': end_ts | timestamp_custom('%Y-%m-%d %H:%M:%S'),
+                  'energy_kwh': energy | round(2),
+                  'duration_seconds': duration | int,
+                  'average_power_kw': (energy / (duration / 3600)) | round(2),
+                  'range_start_miles': r0,
+                  'range_end_miles': r1,
+                  'range_added_miles':
+                    ([r1 - r0, 0] | max) | round(0)
+                    if r0 is number and r1 is number else none
+                } %}
+                {{ ([entry] + prev_sessions)[:max_sessions] }}
+              {% else %}
+                {{ prev_sessions }}
+              {% endif %}
+            {% else %}
+              {{ prev_sessions }}
+            {% endif %}
+    sensor:
+      - name: EV Charger Sessions
+        unique_id: ev_charger_sessions_log
+        icon: mdi:history
+        state: "{{ new_sessions | count }}"
+        attributes:
+          sessions: "{{ new_sessions }}"
+          active: "{{ new_active }}"
+
+  - sensor:
+      - name: EV Charger Current Session Energy
+        unique_id: ev_charger_current_session_energy
+        unit_of_measurement: kWh
+        device_class: energy
+        icon: mdi:chart-bar
+        state: >
+          {% set active = state_attr('sensor.ev_charger_sessions', 'active') %}
+          {% set total = states('sensor.ev_charger_energy_total') | float(none) %}
+          {% if active and total is number
+                and active.energy_start_kwh is number %}
+            {{ ([total - active.energy_start_kwh, 0] | max) | round(2) }}
+          {% else %}
+            {% set last = (state_attr('sensor.ev_charger_sessions', 'sessions')
+                 or [{}]) | first %}
+            {{ last.energy_kwh | default(0) }}
+          {% endif %}
