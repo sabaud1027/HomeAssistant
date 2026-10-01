@@ -5,7 +5,9 @@ cameras:
   garage_door_camera:
     zones:
       drive_entrance:
-        # Where the car enters and the plate is readable.
+        # Where the car enters and the plate is readable. No longer used by
+        # automations/frigate_known_car_arrival.yaml, which only needs
+        # drive_parked.
         coordinates: 0.0,1.0,0.5,1.0,0.5,0.7,0.0,0.7
         objects:
           - car

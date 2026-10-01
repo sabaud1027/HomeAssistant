@@ -1,52 +1,56 @@
-# Alerts only when a known car ARRIVES (drives in from the entrance towards
-# the garage). Departures are ignored because the car passes through the
-# zones in the opposite order.
+# Alerts only when a known car ARRIVES, not when it leaves.
 #
-# Relies on two Frigate zones on the garage_door_camera (see
-# frigate/garage_door_camera_zones.yaml):
-#   drive_entrance - where the plate is readable as the car pulls in
-#   drive_parked   - further up the drive, car fully visible, plate hidden
+# Arrival = the plate is read, THEN a car newly appears in drive_parked
+#           within a minute.
+# Departure = the car is already in drive_parked, THEN the plate is read as
+#             it drives off, so no new drive_parked entry follows.
+#
+# This does not rely on Frigate keeping one continuous track of the car:
+# as the car gets close and its box is cut off by the bottom of the frame,
+# Frigate often drops the track and starts a new one with no plate attached.
+# Any car newly entering drive_parked counts, whichever track it is on.
 alias: Frigate - Known Car Arrived - Day Time
 description: >-
-  Notify when a known car enters drive_parked after first entering
-  drive_entrance. Frigate keeps the plate on the tracked object, so the
-  plate does not need to be visible in drive_parked.
+  Notify when a known plate is read and a car then enters drive_parked
+  within a minute. Plate reads on departure are ignored because the car is
+  already parked when its plate is read.
 triggers:
-  - trigger: mqtt
-    topic: frigate/events
+  - trigger: state
+    entity_id: sensor.garage_door_camera_last_recognized_plate
+    to: Matt's Car
+    id: matts_car
+  - trigger: state
+    entity_id: sensor.garage_door_camera_last_recognized_plate
+    to: Emma's Car
+    id: emmas_car
 conditions:
-  # entered_zones only ever grows, so this fires once per tracked car: on the
-  # update where it first reaches drive_parked, having been in drive_entrance
-  # on an earlier update. Using current_zones instead would re-fire when a
-  # partially out-of-frame parked car flickers in and out of drive_parked, and
-  # would fire for a parked car that Frigate re-detects in both zones at once.
-  - condition: template
-    value_template: >-
-      {% set a = trigger.payload_json.after %}
-      {% set b = trigger.payload_json.before %}
-      {{ a.camera == 'garage_door_camera'
-         and a.label == 'car'
-         and 'drive_entrance' in (b.entered_zones or [])
-         and 'drive_parked' not in (b.entered_zones or [])
-         and 'drive_parked' in (a.entered_zones or []) }}
-  - condition: template
-    value_template: >-
-      {{ car in ["Matt's Car", "Emma's Car"] }}
   - condition: time
     after: "07:00:00"
     before: "19:30:00"
-variables:
-  # sub_label is ["Emma's Car", score] on Frigate 0.14+, a plain string on
-  # older versions.
-  car: >-
-    {% set s = trigger.payload_json.after.sub_label %}
-    {{ (s[0] if s is not string and s is iterable else s) or '' }}
 actions:
+  # A Frigate "new" event can arrive already in drive_parked, so accept that
+  # as well as an update where drive_parked first appears. entered_zones only
+  # ever grows, so a parked car flickering in and out of the zone does not
+  # count.
+  - wait_for_trigger:
+      - trigger: mqtt
+        topic: frigate/events
+        payload: arrived
+        value_template: >-
+          {% set a = value_json.after %}
+          {% set b = value_json.before %}
+          {{ 'arrived' if a.camera == 'garage_door_camera'
+               and a.label == 'car'
+               and 'drive_parked' in (a.entered_zones or [])
+               and (value_json.type == 'new'
+                    or 'drive_parked' not in (b.entered_zones or []))
+             else 'no' }}
+    timeout: "00:01:00"
+    continue_on_timeout: false
   - choose:
       - conditions:
-          - condition: template
-            value_template: >-
-              {{ car == "Emma's Car" }}
+          - condition: trigger
+            id: emmas_car
         sequence:
           - action: telegram_bot.send_message
             metadata: {}
@@ -56,9 +60,8 @@ actions:
               title: Frigate Notification
               message: Emma is home!
       - conditions:
-          - condition: template
-            value_template: >-
-              {{ car == "Matt's Car" }}
+          - condition: trigger
+            id: matts_car
         sequence: []
 mode: single
 max_exceeded: silent
