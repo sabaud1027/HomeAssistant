@@ -62,6 +62,13 @@ actions:
       - conditions:
           - condition: trigger
             id: matts_car
-        sequence: []
+        sequence:
+          - action: telegram_bot.send_message
+            metadata: {}
+            data:
+              entity_id:
+                - notify.matt
+              title: Frigate Notification
+              message: Matt is home!
 mode: single
 max_exceeded: silent
