@@ -1,0 +1,534 @@
+title: Cars
+button_card_templates:
+  # Charger power in watts, shared by every card that colours on it.
+  ev_base:
+    variables:
+      power: |
+        [[[ return parseFloat(states['sensor.ev_charger_power']?.state) || 0; ]]]
+
+  # Flat grey panel used by every card on the dashboard.
+  ev_panel:
+    template: ev_base
+    styles:
+      card:
+        - background: '#eeeeee'
+        - border: none
+        - box-shadow: none
+
+  ev_tile:
+    template: ev_panel
+    show_icon: true
+    show_name: true
+    show_state: true
+    tap_action:
+      action: more-info
+    hold_action:
+      action: more-info
+    styles:
+      card:
+        - height: 112px
+        - border-radius: 22px
+        - padding: 12px
+      grid:
+        - grid-template-areas: '"i n" "i s"'
+        - grid-template-columns: 38px 1fr
+        - grid-template-rows: 34px 1fr
+      img_cell:
+        - justify-content: center
+        - align-items: start
+        - padding-top: 3px
+      icon:
+        - width: 25px
+      name:
+        - justify-self: start
+        - align-self: end
+        - font-size: 13px
+        - font-weight: 400
+        - color: '#595959'
+        - white-space: nowrap
+      state:
+        - justify-self: start
+        - align-self: start
+        - padding-top: 5px
+        - font-size: 24px
+        - font-weight: 600
+        - color: '#171717'
+        - white-space: nowrap
+
+  # Google Maps link for the car's current position.
+  ev_maps:
+    variables:
+      maps_url: |
+        [[[
+          const a = states['device_tracker.fcq_wf0fxxwpmhmj46157_tracker']?.attributes || {};
+          return a.latitude == null || a.longitude == null
+            ? 'https://maps.google.com'
+            : `https://www.google.com/maps/search/?api=1&query=${a.latitude},${a.longitude}`;
+        ]]]
+
+views:
+  - title: EV Charger
+    path: ev-charger
+    icon: mdi:ev-station
+    cards:
+      - type: custom:button-card
+        template: ev_panel
+        entity: sensor.fcq_wf0fxxwpmhmj46157_elvehcharging
+        show_name: false
+        show_state: false
+        show_icon: false
+        tap_action:
+          action: more-info
+        custom_fields:
+          title: Ford Kuga
+          subtitle: PHEV
+          badge: |
+            [[[
+              const charger = states['switch.ev_charger']?.state;
+              const fordState = (entity?.state || '').toLowerCase();
+              const plugState =
+                (states['sensor.fcq_wf0fxxwpmhmj46157_elvehplug']?.state || '').toLowerCase();
+
+              let [text, icon] = ['Ready', 'mdi:power-plug'];
+
+              if (charger === 'off')
+                [text, icon] = ['Charger Off', 'mdi:power-plug-off'];
+              else if (variables.power > 100)
+                [text, icon] = ['Charging', 'mdi:lightning-bolt'];
+              else if (fordState === 'completed' && plugState === 'connected')
+                [text, icon] = ['Charge Complete', 'mdi:battery-check'];
+              else if (plugState === 'disconnected')
+                [text, icon] = ['Disconnected', 'mdi:connection'];
+              else if (plugState === 'connected')
+                [text, icon] = ['Connected', 'mdi:power-plug'];
+
+              return `<div style="display:flex;align-items:center;gap:5px;">
+                <ha-icon icon="${icon}" style="width:20px;height:20px;"></ha-icon>
+                ${text}
+              </div>`;
+            ]]]
+          car: |
+            [[[
+              return `<img src="/local/ford-kuga-side.png"
+                style="width:100%;height:100%;object-fit:contain;">`;
+            ]]]
+        styles:
+          card:
+            - height: 255px
+            - border-radius: 24px
+            - padding: 20px
+            - overflow: hidden
+          grid:
+            - grid-template-areas: '"title badge" "subtitle badge" "car car"'
+            - grid-template-columns: 1fr auto
+            - grid-template-rows: 35px 28px 1fr
+          custom_fields:
+            title:
+              - justify-self: start
+              - align-self: end
+              - font-size: 27px
+              - font-weight: 700
+              - color: '#151515'
+            subtitle:
+              - justify-self: start
+              - align-self: start
+              - font-size: 17px
+              - color: '#666666'
+            badge:
+              - justify-self: end
+              - align-self: center
+              - padding: 10px 13px
+              - border-radius: 14px
+              - font-size: 15px
+              - font-weight: 600
+              - color: "[[[ return variables.power > 100 ? '#008c61' : '#555555'; ]]]"
+              - background: "[[[ return variables.power > 100 ? '#ccefe2' : '#dddddd'; ]]]"
+            car:
+              - width: 100%
+              - height: 100%
+              - justify-self: center
+              - align-self: end
+
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.fcq_wf0fxxwpmhmj46157_soc
+            name: State of Charge
+            icon: mdi:battery
+            styles:
+              icon:
+                - color: '#10a56d'
+              state:
+                - color: '#009b68'
+                - font-size: 29px
+
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.fcq_wf0fxxwpmhmj46157_elveh
+            name: EV Range
+            icon: mdi:navigation-variant-outline
+            state_display: |
+              [[[
+                const value = parseFloat(entity.state);
+                return isNaN(value) ? '—' : `${Math.ceil(value)} miles`;
+              ]]]
+            styles:
+              icon:
+                - color: '#2686df'
+              state:
+                - font-size: 29px
+                - overflow: visible
+                - text-overflow: unset
+                - width: max-content
+                - max-width: none
+
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.fcq_wf0fxxwpmhmj46157_elvehcharging
+            name: Charging State
+            icon: mdi:lightning-bolt
+            styles:
+              icon:
+                - color: "[[[ return variables.power > 100 ? '#00a675' : '#777777'; ]]]"
+              state:
+                - font-size: 19px
+                - color: "[[[ return variables.power > 100 ? '#009b68' : '#171717'; ]]]"
+
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.fcq_wf0fxxwpmhmj46157_elvehplug
+            name: Plug Status
+            icon: mdi:power-plug
+            tap_action:
+              action: more-info
+              entity: switch.ev_charger
+            styles:
+              icon:
+                - color: |
+                    [[[ return states['switch.ev_charger']?.state === 'on' ? '#2686df' : '#777777'; ]]]
+              state:
+                - font-size: 19px
+
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.ev_charger_power
+            name: Charger Power
+            icon: mdi:lightning-bolt
+            state_display: |
+              [[[
+                const value = parseFloat(entity.state);
+                if (isNaN(value)) return '—';
+                if (value <= 100) return '0 W';
+                if (value >= 1000) return (value / 1000).toFixed(2) + ' kW';
+                return Math.round(value) + ' W';
+              ]]]
+            styles:
+              icon:
+                - color: "[[[ return variables.power > 100 ? '#00a675' : '#777777'; ]]]"
+
+          # Live kWh for the session in progress, or the last session when idle.
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.ev_charger_current_session_energy
+            name: Session Energy
+            icon: mdi:chart-bar
+            state_display: |
+              [[[
+                const value = parseFloat(entity.state);
+                return isNaN(value) ? '—' : `${value.toFixed(2)} kWh`;
+              ]]]
+            styles:
+              icon:
+                - color: '#2686df'
+
+          - type: custom:button-card
+            template: ev_tile
+            entity: sensor.fcq_wf0fxxwpmhmj46157_lastrefresh
+            name: Last Refresh
+            icon: mdi:clock-outline
+            update_timer: 30s
+            state_display: |
+              [[[
+                const ts = new Date(entity.state).getTime();
+                if (['unknown', 'unavailable'].includes(entity.state)) return 'Unknown';
+                if (isNaN(ts)) return entity.state;
+
+                const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+                const m = Math.floor(s / 60);
+                const h = Math.floor(m / 60);
+                const d = Math.floor(h / 24);
+
+                if (s < 60) return `${s} sec ago`;
+                if (m < 60) return `${m} min ago`;
+                if (h < 24) return `${h}h ${m % 60}m ago`;
+                return `${d}d ${h % 24}h ago`;
+              ]]]
+            styles:
+              icon:
+                - color: '#2686df'
+              state:
+                - font-size: 19px
+                - overflow: visible
+                - text-overflow: unset
+
+          - type: custom:button-card
+            template: [ev_tile, ev_maps]
+            entity: device_tracker.fcq_wf0fxxwpmhmj46157_tracker
+            name: Location
+            icon: mdi:map-marker
+            state_display: |
+              [[[
+                return {
+                  home: 'Home',
+                  not_home: 'Away',
+                  unknown: 'Unknown',
+                  unavailable: 'Unknown'
+                }[entity.state] ?? entity.state;
+              ]]]
+            tap_action:
+              action: navigate
+              navigation_path: /ev-charger/vehicle-location
+            hold_action:
+              action: url
+              url_path: '[[[ return variables.maps_url; ]]]'
+            styles:
+              icon:
+                - color: '#777777'
+
+      - type: custom:button-card
+        template: ev_panel
+        entity: sensor.ev_charger_sessions
+        name: Charging History
+        icon: mdi:history
+        show_icon: true
+        show_name: true
+        show_state: false
+        tap_action:
+          action: navigate
+          navigation_path: /ev-charger/charging-history
+        custom_fields:
+          summary: |
+            [[[
+              const fmt = (sec) => {
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                return h > 0 ? `${h}h ${m}m` : `${m}m`;
+              };
+
+              const active = entity.attributes.active;
+              if (active) {
+                const kwh = parseFloat(
+                  states['sensor.ev_charger_current_session_energy']?.state) || 0;
+                const sec = Date.now() / 1000 - active.start_ts;
+                return `Charging now: ${kwh.toFixed(2)} kWh • ${fmt(sec)}`;
+              }
+
+              const last = (entity.attributes.sessions || [])[0];
+              if (!last) return 'No charging sessions recorded yet';
+
+              return `Last session: ${Number(last.energy_kwh || 0).toFixed(2)} kWh • `
+                + fmt(Number(last.duration_seconds || 0));
+            ]]]
+        styles:
+          card:
+            - height: 92px
+            - border-radius: 22px
+            - padding: 14px 18px
+          grid:
+            - grid-template-areas: '"i n" "i summary"'
+            - grid-template-columns: 46px 1fr
+            - grid-template-rows: 36px 1fr
+          icon:
+            - width: 28px
+            - color: '#2686df'
+          name:
+            - justify-self: start
+            - align-self: end
+            - font-size: 16px
+            - font-weight: 600
+            - color: '#171717'
+          custom_fields:
+            summary:
+              - justify-self: start
+              - align-self: start
+              - font-size: 13px
+              - color: '#666666'
+              - padding-top: 3px
+
+  - title: Vehicle Location
+    path: vehicle-location
+    subview: true
+    back_path: /ev-charger/ev-charger
+    cards:
+      - type: map
+        title: Ford Kuga
+        entities:
+          - entity: device_tracker.fcq_wf0fxxwpmhmj46157_tracker
+            name: Ford Kuga
+        hours_to_show: 0
+        auto_fit: true
+        default_zoom: 16
+        aspect_ratio: '4:5'
+
+      - type: custom:button-card
+        template: ev_maps
+        entity: device_tracker.fcq_wf0fxxwpmhmj46157_tracker
+        name: Open in Google Maps
+        icon: mdi:google-maps
+        tap_action:
+          action: url
+          url_path: '[[[ return variables.maps_url; ]]]'
+        styles:
+          card:
+            - height: 72px
+            - border-radius: 20px
+            - background: '#2999df'
+            - border: none
+            - box-shadow: none
+          grid:
+            - grid-template-areas: '"i n"'
+            - grid-template-columns: 45px auto
+            - justify-content: center
+            - align-items: center
+          icon:
+            - width: 28px
+            - color: white
+          name:
+            - color: white
+            - font-size: 19px
+            - font-weight: 600
+
+  - title: Charging History
+    path: charging-history
+    subview: true
+    back_path: /ev-charger/ev-charger
+    cards:
+      - type: custom:button-card
+        entity: sensor.ev_charger_sessions
+        show_name: false
+        show_icon: false
+        show_state: false
+        tap_action:
+          action: none
+        custom_fields:
+          heading: |
+            [[[
+              const sessions = entity.attributes.sessions || [];
+              const count = sessions.length;
+              const total = sessions.reduce(
+                (sum, s) => sum + (Number(s.energy_kwh) || 0), 0);
+
+              return `<div>
+                <div style="font-size:26px;font-weight:700;color:#171717;">
+                  Charging History
+                </div>
+                <div style="font-size:14px;color:#666666;margin-top:3px;">
+                  ${count} recorded session${count === 1 ? '' : 's'}
+                  ${count ? ` • ${total.toFixed(1)} kWh total` : ''}
+                </div>
+              </div>`;
+            ]]]
+          history: |
+            [[[
+              const sessions = entity.attributes.sessions || [];
+
+              if (sessions.length === 0) {
+                return `<div style="padding:32px 10px;text-align:center;
+                  color:#777777;font-size:15px;">
+                  No charging sessions recorded yet.
+                </div>`;
+              }
+
+              const parse = (v) => v ? new Date(String(v).replace(' ', 'T')) : null;
+              const formatDate = (v) => {
+                const d = parse(v);
+                return !d || isNaN(d) ? (v || 'Unknown') : d.toLocaleDateString(
+                  'en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+              };
+              const formatTime = (v) => {
+                const d = parse(v);
+                return !d || isNaN(d) ? '' : d.toLocaleTimeString(
+                  'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+              };
+              const formatDuration = (sec) => {
+                sec = Number(sec || 0);
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                return h > 0 ? `${h}h ${m}m` : `${m}m`;
+              };
+              const num = (v) => (v === null || v === undefined || v === '')
+                ? NaN : Number(v);
+              const row = (label, value, extra = '') => `
+                <div style="display:flex;justify-content:space-between;${extra}">
+                  <span style="color:#777777;">${label}</span>
+                  <span style="font-weight:600;">${value}</span>
+                </div>`;
+
+              return sessions.map((s, i) => {
+                const startRange = num(s.range_start_miles);
+                const endRange = num(s.range_end_miles);
+                const rangeAdded = num(s.range_added_miles);
+
+                const range = Number.isFinite(rangeAdded) && rangeAdded >= 0
+                  ? row('Range added', `+${Math.round(rangeAdded)} miles`, 'margin-top:8px;')
+                  : '';
+
+                const rangeDetail = Number.isFinite(startRange) && startRange >= 0
+                    && Number.isFinite(endRange) && endRange >= 0
+                  ? `<div style="font-size:12px;color:#888888;margin-top:3px;">
+                      ${Math.ceil(startRange)} → ${Math.ceil(endRange)} miles
+                    </div>`
+                  : '';
+
+                return `
+                  <div style="background:#eeeeee;border-radius:20px;
+                    padding:16px;margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;
+                      align-items:flex-start;gap:12px;">
+                      <div>
+                        <div style="font-size:17px;font-weight:700;color:#171717;">
+                          ${formatDate(s.start)}
+                        </div>
+                        <div style="font-size:13px;color:#777777;margin-top:2px;">
+                          ${formatTime(s.start)} – ${formatTime(s.end)}
+                        </div>
+                      </div>
+                      <div style="text-align:right;">
+                        <div style="font-size:22px;font-weight:700;color:#171717;">
+                          ${Number(s.energy_kwh || 0).toFixed(2)} kWh
+                        </div>
+                        <div style="font-size:12px;color:#777777;">
+                          Session ${sessions.length - i}
+                        </div>
+                      </div>
+                    </div>
+                    <div style="border-top:1px solid #d5d5d5;margin:13px 0 10px 0;"></div>
+                    ${row('Duration', formatDuration(s.duration_seconds))}
+                    ${row('Average power',
+                      `${Number(s.average_power_kw || 0).toFixed(2)} kW`,
+                      'margin-top:8px;')}
+                    ${range}
+                    ${rangeDetail}
+                  </div>`;
+              }).join('');
+            ]]]
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0
+          grid:
+            - grid-template-areas: '"heading" "history"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto auto
+          custom_fields:
+            heading:
+              - justify-self: stretch
+              - padding: 8px 4px 18px 4px
+            history:
+              - justify-self: stretch
+              - width: 100%
